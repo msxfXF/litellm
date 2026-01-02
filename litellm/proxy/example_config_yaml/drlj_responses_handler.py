@@ -40,20 +40,19 @@ class DrljResponsesLLM(CustomLLM):
             timeout=timeout,
         )
         finish_reason = "stop"
-        response = ModelResponse()
-        response.id = response_id or f"drlj-{uuid.uuid4()}"
-        response.model = model
-        response.created = int(time.time())
-        response.object = "chat.completion"
-        response.choices = [
-            {
-                "index": 0,
-                "finish_reason": finish_reason,
-                "message": {"role": "assistant", "content": text},
-            }
-        ]
-        response.usage = usage
-        return response
+        return ModelResponse(
+            id=response_id or f"drlj-{uuid.uuid4()}",
+            model=model,
+            created=int(time.time()),
+            choices=[
+                {
+                    "index": 0,
+                    "finish_reason": finish_reason,
+                    "message": {"role": "assistant", "content": text},
+                }
+            ],
+            usage=usage,
+        )
 
     def streaming(
         self,
@@ -105,20 +104,19 @@ class DrljResponsesLLM(CustomLLM):
             timeout=timeout,
         )
         finish_reason = "stop"
-        response = ModelResponse()
-        response.id = response_id or f"drlj-{uuid.uuid4()}"
-        response.model = model
-        response.created = int(time.time())
-        response.object = "chat.completion"
-        response.choices = [
-            {
-                "index": 0,
-                "finish_reason": finish_reason,
-                "message": {"role": "assistant", "content": text},
-            }
-        ]
-        response.usage = usage
-        return response
+        return ModelResponse(
+            id=response_id or f"drlj-{uuid.uuid4()}",
+            model=model,
+            created=int(time.time()),
+            choices=[
+                {
+                    "index": 0,
+                    "finish_reason": finish_reason,
+                    "message": {"role": "assistant", "content": text},
+                }
+            ],
+            usage=usage,
+        )
 
     async def astreaming(
         self,
@@ -175,6 +173,8 @@ class DrljResponsesLLM(CustomLLM):
             return raw_payload
 
         upstream_model = model.split("/", 1)[1] if "/" in model else model
+        if upstream_model == "gpt-5-2":
+            upstream_model = "gpt-5.2"
         raw_instructions = optional_params.get("instructions")
         if raw_instructions is not None:
             # 将 raw_instructions 拼接进 system message
@@ -258,7 +258,11 @@ class DrljResponsesLLM(CustomLLM):
                 for line in response.iter_lines():
                     if not line:
                         continue
-                    chunk = self._parse_line(line.decode("utf-8", errors="ignore"))
+                    chunk = self._parse_line(
+                        line.decode("utf-8", errors="ignore")
+                        if isinstance(line, (bytes, bytearray))
+                        else line
+                    )
                     if chunk is None:
                         continue
                     chunk_type = chunk.get("type")
@@ -290,7 +294,11 @@ class DrljResponsesLLM(CustomLLM):
                 async for line in response.aiter_lines():
                     if not line:
                         continue
-                    chunk = self._parse_line(line)
+                    chunk = self._parse_line(
+                        line.decode("utf-8", errors="ignore")
+                        if isinstance(line, (bytes, bytearray))
+                        else line
+                    )
                     if chunk is None:
                         continue
                     chunk_type = chunk.get("type")
@@ -321,7 +329,11 @@ class DrljResponsesLLM(CustomLLM):
                 for line in response.iter_lines():
                     if not line:
                         continue
-                    chunk = self._parse_line(line.decode("utf-8", errors="ignore"))
+                    chunk = self._parse_line(
+                        line.decode("utf-8", errors="ignore")
+                        if isinstance(line, (bytes, bytearray))
+                        else line
+                    )
                     if chunk is None:
                         continue
                     chunk_type = chunk.get("type")

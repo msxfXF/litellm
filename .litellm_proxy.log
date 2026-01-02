@@ -1,0 +1,60 @@
+INFO:     Started server process [65198]
+INFO:     Waiting for application startup.
+
+   ██╗     ██╗████████╗███████╗██╗     ██╗     ███╗   ███╗
+   ██║     ██║╚══██╔══╝██╔════╝██║     ██║     ████╗ ████║
+   ██║     ██║   ██║   █████╗  ██║     ██║     ██╔████╔██║
+   ██║     ██║   ██║   ██╔══╝  ██║     ██║     ██║╚██╔╝██║
+   ███████╗██║   ██║   ███████╗███████╗███████╗██║ ╚═╝ ██║
+   ╚══════╝╚═╝   ╚═╝   ╚══════╝╚══════╝╚══════╝╚═╝     ╚═╝
+
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:4000 (Press CTRL+C to quit)
+
+[1;37m#------------------------------------------------------------#[0m
+[1;37m#                                                            #[0m
+[1;37m#           'I get frustrated when the product...'            #[0m
+[1;37m#        https://github.com/BerriAI/litellm/issues/new        #[0m
+[1;37m#                                                            #[0m
+[1;37m#------------------------------------------------------------#[0m
+
+ Thank you for using LiteLLM! - Krrish & Ishaan
+
+
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+
+
+[94m Initialized Success Callbacks - [] [0m
+[32mLiteLLM: Proxy initialized with Config, Set models:[0m
+[32m    drlj-gpt-5-2[0m
+[32m    gpt-5.2[0m
+[32m    gpt-3.5-turbo-end-user-test[0m
+[32m    gpt-3.5-turbo-end-user-test[0m
+[32m    gpt-3.5-turbo[0m
+[32m    gpt-3.5-turbo-large[0m
+[32m    gpt-4[0m
+[32m    sagemaker-completion-model[0m
+[32m    text-embedding-ada-002[0m
+[32m    dall-e-2[0m
+[32m    openai-dall-e-3[0m
+[32m    fake-openai-endpoint[0m
+[32m    fake-openai-endpoint-2[0m
+[32m    fake-openai-endpoint-3[0m
+[32m    fake-openai-endpoint-4[0m
+[32m    fake-openai-endpoint-3[0m
+[32m    bad-model[0m
+[32m    good-model[0m
+[32m    *[0m
+[32m    realtime-v1[0m
+[32m    realtime-beta[0m
+[32m    anthropic/*[0m
+[32m    bedrock/*[0m
+[32m    groq/*[0m
+[32m    mistral-embed[0m
+[32m    gpt-instruct[0m
+[32m    fake-openai-endpoint-5[0m
+[32m    badly-configured-openai-endpoint[0m
+[32m    gemini-1.5-flash[0m
+[32m    gpt-4o[0m
+INFO:     127.0.0.1:59533 - "POST /v1/chat/completions HTTP/1.1" 200 OK
