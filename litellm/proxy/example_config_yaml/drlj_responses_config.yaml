@@ -1,0 +1,9 @@
+model_list:
+  - model_name: drlj-gpt-5-2
+    litellm_params:
+      model: drlj/gpt-5.2
+
+litellm_settings:
+  custom_provider_map:
+    - provider: drlj
+      custom_handler: drlj_responses_handler.drlj_llm
