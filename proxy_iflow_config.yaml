@@ -1,0 +1,18 @@
+model_list:
+  - model_name: "iflow-glm"
+    litellm_params:
+      model: "iflow/glm-4.7"
+  - model_name: "iflow-deepseek"
+    litellm_params:
+      model: "iflow/deepseek-v3.2-chat"
+  - model_name: "iflow-kimi"
+    litellm_params:
+      model: "iflow/kimi-k2-thinking"
+  - model_name: "iflow-minimax"
+    litellm_params:
+      model: "iflow/minimax-m2.1"
+
+litellm_settings:
+  custom_provider_map:
+    - provider: "iflow"
+      custom_handler: "iflow_custom_handler.iflow_llm"

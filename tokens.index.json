@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "updated_at_ms": 1768658164606,
+  "accounts": {
+    "default": {
+      "token_file": "tokens.default.json",
+      "profile_dir": "browser_profiles\\default",
+      "apiKey": "sk-dd953ef3437a740ea67ca43ce0a6dbbf",
+      "access_token": "e_Yxh29eBCYQTKc_IwzTPbza2lI",
+      "refresh_token": "6Yw_y-PGh3Det3F8yV8NIIRiT0A",
+      "expiry_date": 1768830963500,
+      "token_type": "bearer",
+      "scope": "read"
+    },
+    "u1": {
+      "token_file": "tokens.u1.json",
+      "profile_dir": "browser_profiles\\u1",
+      "apiKey": "sk-0151e82a9d5b1271432c1d0596bb24ee",
+      "access_token": "HPGtZDTkCnbbm6wrNM0n5ro9pM4",
+      "refresh_token": "omHW0YTaVtssAc3_KndcEjoxcb8",
+      "expiry_date": 1768830323958,
+      "token_type": "bearer",
+      "scope": "read"
+    },
+    "u2": {
+      "token_file": "tokens.u2.json",
+      "profile_dir": "browser_profiles\\u2",
+      "apiKey": "sk-764b1547f3ee8836462dcf98cd95efa4",
+      "access_token": "mBHMjij2uHznNj3nA5Z7Hv4BzGM",
+      "refresh_token": "RdrKhyw2vK0OEkuGkQBYUjLpxJI",
+      "expiry_date": 1768830360708,
+      "token_type": "bearer",
+      "scope": "read"
+    },
+    "u3": {
+      "token_file": "tokens.u3.json",
+      "profile_dir": "browser_profiles\\u3",
+      "apiKey": "sk-de6a5c3e48f3ba48063e0685aae1aa65",
+      "access_token": "9gZg_C7fDQ0ZUBP7CPluFcoXH7g",
+      "refresh_token": "dxTkP37w6z_xRl3QHuURxc95Ny0",
+      "expiry_date": 1768830461888,
+      "token_type": "bearer",
+      "scope": "read"
+    },
+    "u4": {
+      "token_file": "tokens.u4.json",
+      "profile_dir": "browser_profiles\\u4",
+      "apiKey": "sk-b9a1c174431a9f60853cc25d21d25be7",
+      "access_token": "vBSVr-I2J0xMLdVyJUz4Ta-7wCM",
+      "refresh_token": "B4qqVLN8FN9Sv4AWWHKenjknUP8",
+      "expiry_date": 1768830641604,
+      "token_type": "bearer",
+      "scope": "read"
+    },
+    "u5": {
+      "token_file": "tokens.u5.json",
+      "profile_dir": "browser_profiles\\u5",
+      "apiKey": "sk-b9078d24b15d8f280d36ece6c4013f0e",
+      "access_token": "GoEZZRVLzLr1phn5ePC_EvpOjuY",
+      "refresh_token": "avkPI-QBShXqqnE4iv_MHXr48d0",
+      "expiry_date": 1768830766427,
+      "token_type": "bearer",
+      "scope": "read"
+    }
+  }
+}
