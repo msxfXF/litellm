@@ -410,6 +410,85 @@ def test_simple_completion_streaming():
             assert chunk.choices[0].finish_reason == "stop"
 
 
+def test_custom_llm_streaming_tool_calls():
+    class MyCustomLLMToolCall(CustomLLM):
+        def streaming(
+            self,
+            model: str,
+            messages: list,
+            api_base: str,
+            custom_prompt_dict: dict,
+            model_response: ModelResponse,
+            print_verbose: Callable[..., Any],
+            encoding,
+            api_key,
+            logging_obj,
+            optional_params: dict,
+            acompletion=None,
+            litellm_params=None,
+            logger_fn=None,
+            headers={},
+            timeout: Optional[Union[float, openai.Timeout]] = None,
+            client: Optional[litellm.HTTPHandler] = None,
+        ) -> Iterator[GenericStreamingChunk]:
+            yield {
+                "finish_reason": "",
+                "index": 0,
+                "is_finished": False,
+                "text": "",
+                "tool_use": {
+                    "index": 0,
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": "{\"city\":\"Beijing\"}"},
+                },
+                "usage": None,
+            }
+            yield {
+                "finish_reason": "stop",
+                "index": 0,
+                "is_finished": True,
+                "text": "",
+                "tool_use": None,
+                "usage": {"completion_tokens": 1, "prompt_tokens": 1, "total_tokens": 2},
+            }
+
+    my_custom_llm = MyCustomLLMToolCall()
+    litellm.custom_provider_map = [
+        {"provider": "custom_llm_tool", "custom_handler": my_custom_llm}
+    ]
+
+    resp = completion(
+        model="custom_llm_tool/my-fake-model",
+        messages=[{"role": "user", "content": "Call the tool"}],
+        stream=True,
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get weather",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"],
+                    },
+                },
+            }
+        ],
+        tool_choice="auto",
+    )
+
+    saw_tool = False
+    for chunk in resp:
+        delta = chunk.choices[0].delta
+        if getattr(delta, "tool_calls", None):
+            saw_tool = True
+            assert delta.tool_calls[0].function.name == "get_weather"
+            assert "Beijing" in (delta.tool_calls[0].function.arguments or "")
+    assert saw_tool is True
+
+
 @pytest.mark.asyncio
 async def test_simple_completion_async_streaming():
     my_custom_llm = MyCustomLLM()

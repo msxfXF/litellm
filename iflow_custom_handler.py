@@ -260,7 +260,7 @@ class IFlowLLM(CustomLLM):
                 continue
             role = m.get("role")
             content = m.get("content")
-            if isinstance(content, str) and role in ("user", "assistant", "tool"):
+            if isinstance(content, str) and role in ("user", "assistant"):
                 nm = dict(m)
                 nm["content"] = [{"type": "text", "text": content}]
                 normalized_messages.append(nm)
@@ -285,10 +285,34 @@ class IFlowLLM(CustomLLM):
             payload["max_new_tokens"] = optional_params.get("max_new_tokens")
 
         # carry through tools if present (OpenAI-compatible)
-        if optional_params.get("tools") is not None:
-            payload["tools"] = optional_params.get("tools")
-        if optional_params.get("tool_choice") is not None:
-            payload["tool_choice"] = optional_params.get("tool_choice")
+        tools = optional_params.get("tools")
+        tool_choice = optional_params.get("tool_choice")
+
+        # Back-compat: support legacy OpenAI `functions` / `function_call`
+        # Convert them to `tools` / `tool_choice` if `tools` were not provided.
+        if tools is None and optional_params.get("functions") is not None:
+            functions = optional_params.get("functions")
+            if isinstance(functions, list):
+                tools = [{"type": "function", "function": fn} for fn in functions if isinstance(fn, dict)]
+
+        if tool_choice is None and optional_params.get("function_call") is not None:
+            function_call = optional_params.get("function_call")
+            if function_call in ("auto", "none"):
+                tool_choice = function_call
+            elif isinstance(function_call, dict) and function_call.get("name"):
+                tool_choice = {
+                    "type": "function",
+                    "function": {"name": function_call["name"]},
+                }
+
+        if tools is not None:
+            payload["tools"] = tools
+            if tool_choice is None:
+                # Some OpenAI-compatible backends require this explicitly.
+                tool_choice = "auto"
+
+        if tool_choice is not None:
+            payload["tool_choice"] = tool_choice
 
         # default: disable thinking
         chat_template_kwargs = optional_params.get("chat_template_kwargs")
@@ -529,12 +553,25 @@ class IFlowLLM(CustomLLM):
                             choice0 = choices[0] if isinstance(choices[0], dict) else {}
                             delta = choice0.get("delta") if isinstance(choice0.get("delta"), dict) else {}
                             text_delta = delta.get("content") or ""
+                            tool_calls_delta = delta.get("tool_calls")
                             finish_reason = choice0.get("finish_reason")
 
                             if text_delta:
                                 yield self._make_generic_streaming_chunk(
                                     text_delta, is_finished=False, finish_reason=""
                                 )
+
+                            if isinstance(tool_calls_delta, list):
+                                for tc in tool_calls_delta:
+                                    if isinstance(tc, dict):
+                                        yield {
+                                            "text": "",
+                                            "tool_use": tc,
+                                            "is_finished": False,
+                                            "finish_reason": "",
+                                            "usage": None,
+                                            "index": 0,
+                                        }
                             if finish_reason is not None and finished is False:
                                 finished = True
                                 yield self._make_generic_streaming_chunk(
@@ -644,12 +681,25 @@ class IFlowLLM(CustomLLM):
                             choice0 = choices[0] if isinstance(choices[0], dict) else {}
                             delta = choice0.get("delta") if isinstance(choice0.get("delta"), dict) else {}
                             text_delta = delta.get("content") or ""
+                            tool_calls_delta = delta.get("tool_calls")
                             finish_reason = choice0.get("finish_reason")
 
                             if text_delta:
                                 yield self._make_generic_streaming_chunk(
                                     text_delta, is_finished=False, finish_reason=""
                                 )
+
+                            if isinstance(tool_calls_delta, list):
+                                for tc in tool_calls_delta:
+                                    if isinstance(tc, dict):
+                                        yield {
+                                            "text": "",
+                                            "tool_use": tc,
+                                            "is_finished": False,
+                                            "finish_reason": "",
+                                            "usage": None,
+                                            "index": 0,
+                                        }
                             if finish_reason is not None and finished is False:
                                 finished = True
                                 yield self._make_generic_streaming_chunk(
