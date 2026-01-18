@@ -7,13 +7,13 @@ import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, Iterator, List, Optional, Tuple
 
 import httpx
 
 import litellm
 from litellm import CustomLLM
-from litellm.types.utils import ModelResponse
+from litellm.types.utils import GenericStreamingChunk, ModelResponse
 
 #
 # NOTE: Per user request, these are hard-coded.
@@ -385,6 +385,294 @@ class IFlowLLM(CustomLLM):
                 mr.usage = resp_json["usage"]  # type: ignore
             return mr
 
+    def _make_generic_streaming_chunk(
+        self,
+        text: str,
+        *,
+        is_finished: bool,
+        finish_reason: str = "",
+        usage: Optional[dict] = None,
+        index: int = 0,
+    ) -> GenericStreamingChunk:
+        # NOTE: Keep keys limited to GenericStreamingChunk annotations
+        return {
+            "text": text,
+            "tool_use": None,
+            "is_finished": is_finished,
+            "finish_reason": finish_reason,
+            "usage": usage,
+            "index": index,
+        }
+
+    def _iter_iflow_sse(self, resp: httpx.Response) -> Iterator[dict]:
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            if isinstance(line, bytes):
+                try:
+                    line = line.decode("utf-8", errors="ignore")
+                except Exception:
+                    continue
+            if not isinstance(line, str):
+                continue
+            if not line.startswith("data:"):
+                continue
+            data_str = line.removeprefix("data:").strip()
+            if not data_str or data_str == "[DONE]":
+                continue
+            try:
+                obj = json.loads(data_str)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict):
+                yield obj
+
+    async def _aiter_iflow_sse(self, resp: httpx.Response) -> AsyncIterator[dict]:
+        async for line in resp.aiter_lines():  # type: ignore[attr-defined]
+            if not line or not isinstance(line, str):
+                continue
+            if not line.startswith("data:"):
+                continue
+            data_str = line.removeprefix("data:").strip()
+            if not data_str or data_str == "[DONE]":
+                continue
+            try:
+                obj = json.loads(data_str)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict):
+                yield obj
+
+    def streaming(  # type: ignore[override]
+        self,
+        model: str,
+        messages: list,
+        api_base: str,
+        custom_prompt_dict: dict,
+        model_response: ModelResponse,
+        print_verbose,
+        encoding,
+        api_key,
+        logging_obj,
+        optional_params: dict,
+        acompletion=None,
+        litellm_params=None,
+        logger_fn=None,
+        headers={},
+        timeout=None,
+        client=None,
+    ) -> Iterator[GenericStreamingChunk]:
+        optional_params.pop("stream", None)
+
+        timeout_s: Optional[float] = None
+        if isinstance(timeout, (int, float)):
+            timeout_s = float(timeout)
+        elif isinstance(timeout, httpx.Timeout):
+            timeout_s = float(timeout.connect_timeout or 60.0)
+
+        payload = self._build_iflow_payload(model=model, messages=messages, optional_params=optional_params)
+        payload["stream"] = True
+
+        accounts = self._eligible_accounts()
+        if not accounts:
+            raise RuntimeError(
+                f"No eligible iFlow accounts found in {self.token_store.token_index_path} "
+                "(expected org accounts, excluding 'default')."
+            )
+
+        random.shuffle(accounts)
+        last_error: Optional[Exception] = None
+
+        for account in accounts:
+            try:
+                token_file, tokens = self.token_store.load_account_tokens(account)
+                tokens = self.token_store.ensure_fresh_tokens(account, token_file, tokens)
+                sk = tokens.get("apiKey")
+                if not sk:
+                    raise RuntimeError(f"Missing apiKey(sk) for account '{account}'.")
+
+                trace_id = secrets.token_hex(16)
+                span_id = secrets.token_hex(8)
+                session_id = f"session-{uuid.uuid4()}"
+                conversation_id = str(uuid.uuid4())
+                req_headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {sk}",
+                    "User-Agent": "iFlow-Cli",
+                    "session-id": session_id,
+                    "conversation-id": conversation_id,
+                    "traceparent": f"00-{trace_id}-{span_id}-01",
+                    "accept-language": "*",
+                    "accept": "text/event-stream",
+                }
+                _timeout = httpx.Timeout(timeout_s) if isinstance(timeout_s, (int, float)) else httpx.Timeout(60.0)
+
+                finished = False
+                with httpx.Client(timeout=_timeout) as _client:
+                    with _client.stream("POST", CHAT_URL, headers=req_headers, json=payload) as resp:
+                        if resp.status_code in (401, 403):
+                            self._mark_cooldown(account, reason=f"auth_{resp.status_code}", seconds=10)
+                            raise RuntimeError(f"iFlow HTTP {resp.status_code}: {resp.text}")
+                        if resp.status_code >= 400:
+                            self._mark_cooldown(account, reason=f"http_{resp.status_code}", seconds=30)
+                            raise RuntimeError(f"iFlow HTTP {resp.status_code}: {resp.text}")
+
+                        for obj in self._iter_iflow_sse(resp):
+                            err = self._extract_iflow_error(obj)
+                            if err:
+                                code, msg = err
+                                raise RuntimeError(f"iFlow error {code}: {msg}")
+
+                            choices = obj.get("choices") if isinstance(obj.get("choices"), list) else []
+                            if not choices:
+                                continue
+                            choice0 = choices[0] if isinstance(choices[0], dict) else {}
+                            delta = choice0.get("delta") if isinstance(choice0.get("delta"), dict) else {}
+                            text_delta = delta.get("content") or ""
+                            finish_reason = choice0.get("finish_reason")
+
+                            if text_delta:
+                                yield self._make_generic_streaming_chunk(
+                                    text_delta, is_finished=False, finish_reason=""
+                                )
+                            if finish_reason is not None and finished is False:
+                                finished = True
+                                yield self._make_generic_streaming_chunk(
+                                    "",
+                                    is_finished=True,
+                                    finish_reason=str(finish_reason or "stop"),
+                                    usage=obj.get("usage") if isinstance(obj.get("usage"), dict) else None,
+                                )
+                        if finished is False:
+                            yield self._make_generic_streaming_chunk(
+                                "",
+                                is_finished=True,
+                                finish_reason="stop",
+                                usage=None,
+                            )
+                return
+            except Exception as e:
+                last_error = e
+                self._mark_cooldown(account, reason="exception", seconds=30)
+                continue
+
+        raise RuntimeError(f"All iFlow accounts failed. Last error: {last_error}")
+
+    async def astreaming(  # type: ignore[override]
+        self,
+        model: str,
+        messages: list,
+        api_base: str,
+        custom_prompt_dict: dict,
+        model_response: ModelResponse,
+        print_verbose,
+        encoding,
+        api_key,
+        logging_obj,
+        optional_params: dict,
+        acompletion=None,
+        litellm_params=None,
+        logger_fn=None,
+        headers={},
+        timeout=None,
+        client=None,
+    ) -> AsyncIterator[GenericStreamingChunk]:
+        optional_params.pop("stream", None)
+
+        timeout_s: Optional[float] = None
+        if isinstance(timeout, (int, float)):
+            timeout_s = float(timeout)
+        elif isinstance(timeout, httpx.Timeout):
+            timeout_s = float(timeout.connect_timeout or 60.0)
+
+        payload = self._build_iflow_payload(model=model, messages=messages, optional_params=optional_params)
+        payload["stream"] = True
+
+        accounts = self._eligible_accounts()
+        if not accounts:
+            raise RuntimeError(
+                f"No eligible iFlow accounts found in {self.token_store.token_index_path} "
+                "(expected org accounts, excluding 'default')."
+            )
+
+        random.shuffle(accounts)
+        last_error: Optional[Exception] = None
+
+        for account in accounts:
+            try:
+                token_file, tokens = self.token_store.load_account_tokens(account)
+                tokens = self.token_store.ensure_fresh_tokens(account, token_file, tokens)
+                sk = tokens.get("apiKey")
+                if not sk:
+                    raise RuntimeError(f"Missing apiKey(sk) for account '{account}'.")
+
+                trace_id = secrets.token_hex(16)
+                span_id = secrets.token_hex(8)
+                session_id = f"session-{uuid.uuid4()}"
+                conversation_id = str(uuid.uuid4())
+                req_headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {sk}",
+                    "User-Agent": "iFlow-Cli",
+                    "session-id": session_id,
+                    "conversation-id": conversation_id,
+                    "traceparent": f"00-{trace_id}-{span_id}-01",
+                    "accept-language": "*",
+                    "accept": "text/event-stream",
+                }
+                _timeout = httpx.Timeout(timeout_s) if isinstance(timeout_s, (int, float)) else httpx.Timeout(60.0)
+
+                finished = False
+                async with httpx.AsyncClient(timeout=_timeout) as _client:
+                    async with _client.stream("POST", CHAT_URL, headers=req_headers, json=payload) as resp:
+                        if resp.status_code in (401, 403):
+                            self._mark_cooldown(account, reason=f"auth_{resp.status_code}", seconds=10)
+                            raise RuntimeError(f"iFlow HTTP {resp.status_code}: {await resp.aread()}")
+                        if resp.status_code >= 400:
+                            self._mark_cooldown(account, reason=f"http_{resp.status_code}", seconds=30)
+                            raise RuntimeError(f"iFlow HTTP {resp.status_code}: {await resp.aread()}")
+
+                        async for obj in self._aiter_iflow_sse(resp):  # type: ignore[arg-type]
+                            err = self._extract_iflow_error(obj)
+                            if err:
+                                code, msg = err
+                                raise RuntimeError(f"iFlow error {code}: {msg}")
+
+                            choices = obj.get("choices") if isinstance(obj.get("choices"), list) else []
+                            if not choices:
+                                continue
+                            choice0 = choices[0] if isinstance(choices[0], dict) else {}
+                            delta = choice0.get("delta") if isinstance(choice0.get("delta"), dict) else {}
+                            text_delta = delta.get("content") or ""
+                            finish_reason = choice0.get("finish_reason")
+
+                            if text_delta:
+                                yield self._make_generic_streaming_chunk(
+                                    text_delta, is_finished=False, finish_reason=""
+                                )
+                            if finish_reason is not None and finished is False:
+                                finished = True
+                                yield self._make_generic_streaming_chunk(
+                                    "",
+                                    is_finished=True,
+                                    finish_reason=str(finish_reason or "stop"),
+                                    usage=obj.get("usage") if isinstance(obj.get("usage"), dict) else None,
+                                )
+                        if finished is False:
+                            yield self._make_generic_streaming_chunk(
+                                "",
+                                is_finished=True,
+                                finish_reason="stop",
+                                usage=None,
+                            )
+                return
+            except Exception as e:
+                last_error = e
+                self._mark_cooldown(account, reason="exception", seconds=30)
+                continue
+
+        raise RuntimeError(f"All iFlow accounts failed. Last error: {last_error}")
+
     def completion(  # type: ignore[override]
         self,
         model: str,
@@ -404,8 +692,7 @@ class IFlowLLM(CustomLLM):
         timeout=None,
         client=None,
     ) -> ModelResponse:
-        if optional_params.get("stream") is True:
-            raise RuntimeError("IFlowLLM streaming is not enabled yet.")
+        optional_params.pop("stream", None)
 
         timeout_s: Optional[float] = None
         if isinstance(timeout, (int, float)):
@@ -476,8 +763,7 @@ class IFlowLLM(CustomLLM):
         timeout=None,
         client=None,
     ) -> ModelResponse:
-        if optional_params.get("stream") is True:
-            raise RuntimeError("IFlowLLM streaming is not enabled yet.")
+        optional_params.pop("stream", None)
 
         timeout_s: Optional[float] = None
         if isinstance(timeout, (int, float)):

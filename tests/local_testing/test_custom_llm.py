@@ -430,6 +430,65 @@ async def test_simple_completion_async_streaming():
             assert chunk.choices[0].finish_reason == "stop"
 
 
+@pytest.mark.asyncio
+async def test_custom_llm_async_streaming_coroutine_return():
+    class MyCustomLLMCoroutineStreaming(CustomLLM):
+        async def astreaming(  # type: ignore
+            self,
+            model: str,
+            messages: list,
+            api_base: str,
+            custom_prompt_dict: dict,
+            model_response: ModelResponse,
+            print_verbose: Callable[..., Any],
+            encoding,
+            api_key,
+            logging_obj,
+            optional_params: dict,
+            acompletion=None,
+            litellm_params=None,
+            logger_fn=None,
+            headers={},
+            timeout: Optional[Union[float, openai.Timeout]] = None,
+            client: Optional[litellm.AsyncHTTPHandler] = None,
+        ) -> AsyncIterator[GenericStreamingChunk]:  # type: ignore
+            async def _gen() -> AsyncIterator[GenericStreamingChunk]:
+                yield {
+                    "finish_reason": "stop",
+                    "index": 0,
+                    "is_finished": True,
+                    "text": "Hello world",
+                    "tool_use": None,
+                    "usage": {
+                        "completion_tokens": 10,
+                        "prompt_tokens": 20,
+                        "total_tokens": 30,
+                    },
+                }
+
+            return _gen()
+
+    my_custom_llm = MyCustomLLMCoroutineStreaming()
+    litellm.custom_provider_map = [
+        {"provider": "custom_llm_coroutine", "custom_handler": my_custom_llm}
+    ]
+
+    resp = await litellm.acompletion(
+        model="custom_llm_coroutine/my-fake-model",
+        messages=[{"role": "user", "content": "Hello world!"}],
+        stream=True,
+    )
+
+    saw_stop = False
+    async for chunk in resp:
+        if chunk.choices[0].finish_reason is None:
+            assert isinstance(chunk.choices[0].delta.content, str)
+        else:
+            assert chunk.choices[0].finish_reason == "stop"
+            saw_stop = True
+    assert saw_stop is True
+
+
 def test_simple_image_generation():
     my_custom_llm = MyCustomLLM()
     litellm.custom_provider_map = [
